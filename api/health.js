@@ -7,8 +7,10 @@ export default function handler(req, res) {
   const env = process.env;
   res.status(200).json({
     ok: true,
+    client: env.CLIENT_NAME ?? null,
     site: env.GSC_SITE_URL ?? null,
     configured: {
+      clientName: Boolean(env.CLIENT_NAME),
       clientId: Boolean(env.GOOGLE_CLIENT_ID),
       clientSecret: Boolean(env.GOOGLE_CLIENT_SECRET),
       refreshToken: Boolean(env.GOOGLE_REFRESH_TOKEN),

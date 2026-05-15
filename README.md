@@ -1,6 +1,8 @@
-# GSC Dashboard Backend
+# GSC Dashboard Backend (Template)
 
 Vercel serverless backend that exposes Google Search Console **Performance** data as JSON, for consumption by a Lovable dashboard embedded via iframe on `clearleaddigital.com`.
+
+**Deployment model: one Vercel project per client.** This repo is the template — fork or clone it once, then deploy a fresh Vercel project per client with their own `GOOGLE_REFRESH_TOKEN`, `GSC_SITE_URL`, and `CLIENT_NAME`. The Google OAuth client app itself (Client ID + Secret) can be shared across all client deployments. See [Onboarding a new client](#onboarding-a-new-client) below.
 
 ## What's exposed
 
@@ -32,51 +34,77 @@ GSC's public API does **not** include Crawl Stats (Googlebot requests, redirect 
 1. Manual CSV export → drop into a `data/` folder and add a separate CSV-reading endpoint.
 2. Headless-browser scrape (fragile, against GSC ToS — not recommended).
 
-## Setup
+## First-time setup (do this once for your agency)
 
-### 1. Google Cloud project
+### 1. Create a shared Google Cloud OAuth app
+
+You only do this **once across all clients**. The same Client ID + Secret will authorize every client's refresh token.
 
 1. Create or pick a project at https://console.cloud.google.com.
 2. **Enable** "Google Search Console API" under APIs & Services → Library.
-3. Under APIs & Services → **OAuth consent screen**, configure as "External" with your email as a test user. Add scope `https://www.googleapis.com/auth/webmasters.readonly`.
+3. Under APIs & Services → **OAuth consent screen**, configure as "External". Add the scope `https://www.googleapis.com/auth/webmasters.readonly`. **Publish** the app (or add each client's Google email as a test user — see the trade-offs in the [OAuth consent scope](#oauth-consent-scope) section below).
 4. Under APIs & Services → **Credentials**, create an "OAuth 2.0 Client ID" of type **Web application**:
    - Authorized redirect URI: `http://localhost:8765/oauth/callback`
-5. Copy the Client ID and Client Secret.
+5. Save the Client ID and Client Secret somewhere you'll reuse for every client deployment (e.g. 1Password, agency secrets vault).
 
-### 2. Generate the refresh token (one-time)
+## Onboarding a new client
+
+Repeat per client. Takes ~5 minutes once you've done it once.
+
+### 1. Get the client's refresh token
+
+The client must grant your OAuth app access to their GSC property:
 
 ```bash
 npm install
-export GOOGLE_CLIENT_ID="..."
-export GOOGLE_CLIENT_SECRET="..."
+export GOOGLE_CLIENT_ID="<shared client id from setup>"
+export GOOGLE_CLIENT_SECRET="<shared client secret from setup>"
 npm run get-token
 ```
 
-Open the URL it prints, sign in with the Google account that has access to the GSC property, approve. The terminal prints `GOOGLE_REFRESH_TOKEN=...`.
+Open the URL it prints in a browser the **client** is signed into (or have them screen-share / use a temporary session). They approve the consent screen. Your terminal prints their `GOOGLE_REFRESH_TOKEN`.
 
-### 3. Deploy to Vercel
+> **Already have a refresh token from a prior Lovable setup?** Skip this step — just paste the existing token into Vercel in step 3.
 
+### 2. Create a fresh Vercel project for the client
+
+From this repo's directory:
 ```bash
-npx vercel link        # link this directory to a Vercel project
-npx vercel env add GOOGLE_CLIENT_ID production
-npx vercel env add GOOGLE_CLIENT_SECRET production
-npx vercel env add GOOGLE_REFRESH_TOKEN production
-npx vercel env add GSC_SITE_URL production           # e.g. sc-domain:ironcladpm.com
-npx vercel env add ALLOWED_ORIGINS production        # e.g. https://clearleaddigital.com,https://www.clearleaddigital.com
-npx vercel --prod
+npx vercel link              # choose "Link to different project" → "Create new project"
+# Name it something like: gsc-api-<clientslug>
 ```
 
-### 4. Wire up Lovable
+### 3. Set the per-client env vars
 
-In your Lovable dashboard, fetch from the deployed URLs, e.g.:
+```bash
+npx vercel env add CLIENT_NAME production            # e.g. ironcladpm
+npx vercel env add GOOGLE_CLIENT_ID production       # shared across all clients
+npx vercel env add GOOGLE_CLIENT_SECRET production   # shared across all clients
+npx vercel env add GOOGLE_REFRESH_TOKEN production   # the client's refresh token from step 1
+npx vercel env add GSC_SITE_URL production           # e.g. sc-domain:ironcladpm.com
+npx vercel env add ALLOWED_ORIGINS production        # https://clearleaddigital.com,https://www.clearleaddigital.com,<client's lovable URL>
+```
+
+### 4. Deploy and verify
+
+```bash
+npx vercel --prod
+curl https://<the-deployment-url>/api/health
+```
+
+The `/api/health` response should show `"client": "<your client name>"` and all four `configured.*` flags as `true`.
+
+### 5. Wire the client's Lovable dashboard
+
+In their Lovable project, point fetches at the new deployment:
 
 ```js
-const base = "https://your-project.vercel.app";
+const base = "https://gsc-api-<clientslug>.vercel.app";
 const perf = await fetch(`${base}/api/performance?days=90`).then(r => r.json());
 const pages = await fetch(`${base}/api/pages?days=90&limit=100`).then(r => r.json());
 ```
 
-CORS is restricted to whatever you set in `ALLOWED_ORIGINS`. Add the Lovable preview domain (e.g. `https://preview--your-app.lovable.app`) during development if needed.
+Done. The dashboard now auto-refreshes from GSC daily (with 1-hour edge cache).
 
 ## Local dev
 
@@ -87,6 +115,15 @@ npm install
 npx vercel dev
 # → http://localhost:3000/api/health
 ```
+
+## OAuth consent scope
+
+When you set up your OAuth app, you choose between two modes on the consent screen:
+
+- **Testing mode**: free, but you must add each client's Google email as a "test user" in the Cloud Console before they can authorize. Refresh tokens expire after 7 days. **Not viable for production.**
+- **Published mode (External, In production)**: any Google account can authorize. Refresh tokens don't expire (until revoked). Requires a verification flow from Google — for read-only scopes like `webmasters.readonly` this is a quick self-attestation, not a full security audit.
+
+For a multi-client agency, **publish the app**. The verification screen for `webmasters.readonly` is one of Google's lighter-touch reviews.
 
 ## Notes on GSC site URL format
 
