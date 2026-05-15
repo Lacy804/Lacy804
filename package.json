@@ -1,0 +1,21 @@
+{
+  "name": "gsc-dashboard-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Google Search Console API backend serving JSON to a Lovable dashboard embedded on clearleaddigital.com.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod",
+    "get-token": "node scripts/get-refresh-token.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^39.0.0"
+  }
+}
